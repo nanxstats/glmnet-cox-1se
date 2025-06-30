@@ -7,8 +7,9 @@ library(ggplot2)
 
 # Simulate Cox regression ----
 simulate_cox <- function(
-    n = 1000, p = 100, nzc = 10, prob = 0.1,
-    alpha = 0.5, use_1se = TRUE) {
+    n = 1000, p = 100, nzc = 10,
+    prob, alpha,
+    use_1se = TRUE) {
   # Generate data
   x <- matrix(rnorm(n * p), n, p)
 
@@ -82,11 +83,7 @@ simulate_version <- function(version, n_reps = 500) {
 
     for (prob in prob_values) {
       for (alpha in alpha_values) {
-        metrics <- simulate_cox(
-          prob = prob,
-          alpha = alpha,
-          use_1se = TRUE
-        )
+        metrics <- simulate_cox(prob = prob, alpha = alpha, use_1se = TRUE)
 
         rep_results <- rbind(rep_results, data.frame(
           rep = rep,
