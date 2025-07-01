@@ -247,7 +247,7 @@ summarize_sparsity <- function(results_df) {
     scale_color_manual(values = c("4.1-8" = "#E69F00", "4.1-9" = "#56B4E9")) +
     scale_linetype_manual(
       values = c("1" = "solid", "0.5" = "dashed"),
-      labels = c("1" = "Lasso", "0.5" = "Elastic-Net")
+      labels = c("1" = "Lasso", "0.5" = "Elastic-net")
     ) +
     labs(
       title = "Null model rate comparison",
@@ -302,7 +302,7 @@ compare_versions <- function(results_df) {
     geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
     scale_color_manual(
       values = c("1" = "#E69F00", "0.5" = "#56B4E9"),
-      labels = c("1" = "Lasso", "0.5" = "Elastic-Net")
+      labels = c("1" = "Lasso", "0.5" = "Elastic-net")
     ) +
     labs(
       title = "Change in # variables selected: glmnet 4.1-9 vs. 4.1-8",
@@ -327,7 +327,7 @@ compare_versions <- function(results_df) {
 plot_heatmap <- function(summary_by_version) {
   heatmap_data <- summary_by_version |>
     dplyr::mutate(
-      model_type = ifelse(alpha == 1, "Lasso", "Elastic-Net"),
+      model_type = ifelse(alpha == 1, "Lasso", "Elastic-net"),
       version_label = paste("glmnet", version)
     )
 
