@@ -1,7 +1,6 @@
 # Compare Cox regression lambda.1se rule behavior in glmnet 4.1-8 vs. 4.1-9
 # Examine the effect of CV error normalization changes on model selection
 
-library(glmnet)
 library(doFuture)
 library(ggplot2)
 
@@ -24,13 +23,13 @@ simulate_cox <- function(
   y <- cbind(time = ty, status = 1 - tcens)
 
   # Run cross-validation
-  fit_cv <- cv.glmnet(x, y, family = "cox", nfolds = 5, alpha = alpha)
+  fit_cv <- glmnet::cv.glmnet(x, y, family = "cox", nfolds = 5, alpha = alpha)
 
   # Select lambda
   lambda_selected <- if (use_1se) fit_cv$lambda.1se else fit_cv$lambda.min
 
   # Fit model on complete data with selected lambda
-  fit <- glmnet(x, y, family = "cox", alpha = alpha, lambda = lambda_selected)
+  fit <- glmnet::glmnet(x, y, family = "cox", alpha = alpha, lambda = lambda_selected)
 
   # Calculate metrics
   selected_vars <- which(as.vector(fit$beta) != 0)
@@ -48,25 +47,24 @@ simulate_cox <- function(
   metrics
 }
 
+install_glmnet <- function(version) {
+  glmnet_installed <- installed.packages()[, "Package"] == "glmnet"
+  if (any(glmnet_installed)) remove.packages("glmnet")
+  message(paste("Installing glmnet", version), "...")
+  remotes::install_version("glmnet", version = version, quiet = TRUE, upgrade = "never", force = TRUE)
+}
+
 # Simulate for a specific glmnet version ----
-simulate_version <- function(version, n_reps = 500) {
+simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
   # Set up parameters
   prob_values <- seq(0.1, 0.9, by = 0.1)
   alpha_values <- c(1, 0.5) # lasso and elastic-net
 
-  # Forcefully unload glmnet if loaded
-  if ("glmnet" %in% loadedNamespaces()) unloadNamespace("glmnet")
-
-  # Install specific version (force ensures we get the exact version)
-  message(paste("Installing glmnet", version, "..."))
-  remotes::install_version("glmnet", version, quiet = TRUE, upgrade = "never", force = TRUE)
-
-  # Load the specific version
-  library(glmnet)
+  # Install the specific versions
+  install_glmnet(version)
 
   # Verify version
-  current_version <- packageVersion("glmnet")
-  message(paste("Running experiments with glmnet version:", current_version))
+  message(paste("Running experiments with glmnet version:", packageVersion("glmnet")))
 
   # Set up parallel backend
   plan(multisession, workers = parallelly::availableCores() - 1)
@@ -145,16 +143,19 @@ plot_densities <- function(results_df) {
       p <- ggplot(plot_data, aes(x = value, y = prob_factor, fill = prob_factor)) +
         ggridges::geom_density_ridges(alpha = 0.8, scale = 2) +
         facet_wrap(~metric, scales = "free_x", ncol = 3) +
-        scale_fill_viridis_d(name = "Censoring\nProbability", direction = -1) +
+        scale_fill_viridis_d(
+          name = "Censoring\nProbability",
+          guide = guide_legend(reverse = TRUE)
+        ) +
         labs(
           title = paste0(
             "glmnet ", version, " - ",
-            ifelse(alpha == 1, "Lasso", "Elastic-Net"),
+            ifelse(alpha == 1, "Lasso", "Elastic-net"),
             " (α = ", alpha, ")"
           ),
           subtitle = "Distribution of selected variables using lambda.1se",
-          x = "Number of Variables",
-          y = "Censoring Probability"
+          x = "Number of variables",
+          y = "Censoring probability"
         ) +
         theme_minimal() +
         theme(
@@ -166,7 +167,7 @@ plot_densities <- function(results_df) {
 
       # Store plot
       plot_name <- paste0(
-        "v", gsub("\\.", "_", version), "_alpha",
+        "v", gsub("\\.|-", "_", version), "_alpha",
         gsub("\\.", "_", as.character(alpha))
       )
       plots_list[[plot_name]] <- p
@@ -178,24 +179,19 @@ plot_densities <- function(results_df) {
 
 # Compare glmnet versions ----
 compare_glmnet_versions <- function() {
-  message("Starting glmnet version comparison experiments...")
+  message("\n=== Running benchmarks with glmnet 4.1-8 ===")
+  results_418 <- simulate_version("4.1-8", n_reps = 500)
 
-  # Run experiments for both versions
-  message("\n=== Running experiments for glmnet 4.1-8 ===")
-  results_418 <- simulate_version("4.1-8", n_reps = 27)
-
-  message("\n=== Running experiments for glmnet 4.1-9 ===")
-  results_419 <- simulate_version("4.1-9", n_reps = 27)
+  message("\n=== Running benchmarks with glmnet 4.1-9 ===")
+  results_419 <- simulate_version("4.1-9", n_reps = 500)
 
   # Combine results
   all_results <- rbind(results_418, results_419)
 
   # Save results
   saveRDS(all_results, "glmnet_comparison_results.rds")
-  message("\nResults saved to glmnet_comparison_results.rds")
 
   # Create plots
-  message("\nCreating density visualizations...")
   plots <- plot_densities(all_results)
 
   # Save plots
@@ -203,13 +199,11 @@ compare_glmnet_versions <- function() {
     ggsave(
       filename = paste0("plot_", plot_name, ".png"),
       plot = plots[[plot_name]],
-      width = 12,
-      height = 8,
+      width = 7,
+      height = 7 / 1.618,
       dpi = 300
     )
   }
-
-  message("\nPlots saved as PNG files")
 
   all_results
 }
@@ -243,17 +237,17 @@ summarize_sparsity <- function(results_df) {
       labels = c("1" = "Lasso", "0.5" = "Elastic-Net")
     ) +
     labs(
-      title = "Null Model Rate Comparison",
+      title = "Null model rate comparison",
       subtitle = "Proportion of simulations resulting in no variable selection",
-      x = "Censoring Probability",
-      y = "Null Model Rate",
-      color = "glmnet Version",
-      linetype = "Model Type"
+      x = "Censoring probability",
+      y = "Null model rate",
+      color = "glmnet version",
+      linetype = "Model type"
     ) +
     cowplot::theme_cowplot() +
     theme(legend.position = "bottom")
 
-  ggsave("null_model_rate_comparison.png", p_null, width = 10, height = 6, dpi = 300)
+  ggsave("null_model_rate_comparison.svg", p_null, width = 7, height = 7 / 1.618)
 
   list(summary_stats = summary_stats, plot = p_null)
 }
@@ -298,16 +292,16 @@ compare_versions <- function(results_df) {
       labels = c("1" = "Lasso", "0.5" = "Elastic-Net")
     ) +
     labs(
-      title = "Change in Variable Selection: glmnet 4.1-9 vs 4.1-8",
-      subtitle = "Negative values indicate fewer variables selected in version 4.1-9",
-      x = "Censoring Probability",
-      y = "Difference in Mean Variables Selected\n(4.1-9 minus 4.1-8)",
-      color = "Model Type"
+      title = "Change in # variables selected: glmnet 4.1-9 vs. 4.1-8",
+      subtitle = "Negative values indicate fewer variables selected in glmnet 4.1-9",
+      x = "Censoring probability",
+      y = "Difference in mean variables selected\n(4.1-9 minus 4.1-8)",
+      color = "Model type"
     ) +
     cowplot::theme_cowplot() +
     theme(legend.position = "bottom")
 
-  ggsave("difference_mean_selected.png", p_diff_selected, width = 10, height = 6, dpi = 300)
+  ggsave("difference_mean_selected.svg", p_diff_selected, width = 7, height = 7 / 1.618)
 
   list(
     summary_by_version = summary_by_version,
@@ -343,9 +337,9 @@ plot_heatmap <- function(summary_by_version) {
       name = "Null Model\nRate"
     ) +
     labs(
-      title = "Null Model Rates Across Conditions",
+      title = "Null model rates across conditions",
       subtitle = "Proportion of simulations with no variable selection (lambda.1se)",
-      x = "Censoring Probability",
+      x = "Censoring probability",
       y = ""
     ) +
     theme_minimal() +
@@ -356,7 +350,7 @@ plot_heatmap <- function(summary_by_version) {
       legend.position = "right"
     )
 
-  ggsave("null_model_heatmap.png", p_heatmap, width = 12, height = 6, dpi = 300)
+  ggsave("null_model_heatmap.svg", p_heatmap, width = 7, height = 7 / 1.618)
 
   p_heatmap
 }
