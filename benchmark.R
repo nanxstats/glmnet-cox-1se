@@ -5,6 +5,14 @@ library(doFuture)
 library(ggplot2)
 
 # Simulate Cox regression ----
+#' @param n Number of observations.
+#' @param p Number of variables.
+#' @param nzc Number of non-zero coefficients.
+#' @param prob Censoring probability.
+#' @param alpha Elastic-net mixing parameter.
+#' @param use_1se Use 1 standard error rule?
+#'
+#' @return List of metrics.
 simulate_cox <- function(
     n = 1000, p = 100, nzc = 10,
     prob, alpha,
@@ -47,6 +55,7 @@ simulate_cox <- function(
   metrics
 }
 
+# Install glmnet version ----
 install_glmnet <- function(version) {
   glmnet_installed <- installed.packages()[, "Package"] == "glmnet"
   if (any(glmnet_installed)) remove.packages("glmnet")
@@ -55,6 +64,10 @@ install_glmnet <- function(version) {
 }
 
 # Simulate for a specific glmnet version ----
+#' @param version glmnet version to use.
+#' @param n_reps Number of repetitions.
+#'
+#' @return Results data frame.
 simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
   # Set up parameters
   prob_values <- seq(0.1, 0.9, by = 0.1)
@@ -72,7 +85,7 @@ simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
   # Set seed for reproducibility
   set.seed(42)
 
-  # Run experiments using lambda.1se (main focus)
+  # Run experiments using lambda.1se
   results_list <- foreach(
     rep = 1:n_reps,
     .options.future = list(seed = TRUE)
@@ -104,7 +117,7 @@ simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
   # Reset to sequential processing
   plan(sequential)
 
-  # Combine results using dplyr
+  # Combine results
   results <- dplyr::bind_rows(results_list)
 
   as.data.frame(results)
@@ -124,7 +137,6 @@ plot_densities <- function(results_df) {
 
   for (version in unique(results_df$version)) {
     for (alpha in unique(results_df$alpha)) {
-      # Filter data
       plot_data <- results_df |>
         dplyr::filter(version == !!version, alpha == !!alpha) |>
         tidyr::pivot_longer(
@@ -133,7 +145,8 @@ plot_densities <- function(results_df) {
           values_to = "value"
         ) |>
         dplyr::mutate(
-          metric = factor(metric,
+          metric = factor(
+            metric,
             levels = c("total_selected", "true_positives", "false_positives"),
             labels = c("Total Selected", "True Positives", "False Positives")
           )
