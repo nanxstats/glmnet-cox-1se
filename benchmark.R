@@ -79,25 +79,28 @@ simulate_version <- function(version, n_reps = 500) {
     rep = 1:n_reps,
     .options.future = list(seed = TRUE)
   ) %dofuture% {
-    rep_results <- data.frame()
+    results_single <- data.frame()
 
     for (prob in prob_values) {
       for (alpha in alpha_values) {
         metrics <- simulate_cox(prob = prob, alpha = alpha, use_1se = TRUE)
 
-        rep_results <- rbind(rep_results, data.frame(
-          rep = rep,
-          prob = metrics$prob,
-          alpha = metrics$alpha,
-          total_selected = metrics$total_selected,
-          true_positives = metrics$true_positives,
-          false_positives = metrics$false_positives,
-          version = version
-        ))
+        results_single <- rbind(
+          results_single,
+          data.frame(
+            rep = rep,
+            prob = metrics$prob,
+            alpha = metrics$alpha,
+            total_selected = metrics$total_selected,
+            true_positives = metrics$true_positives,
+            false_positives = metrics$false_positives,
+            version = version
+          )
+        )
       }
     }
 
-    rep_results
+    results_single
   }
 
   # Reset to sequential processing
@@ -112,8 +115,10 @@ simulate_version <- function(version, n_reps = 500) {
 # Plot selection densities ----
 plot_densities <- function(results_df) {
   # Convert prob to factor for proper ordering
-  results_df$prob_factor <- factor(results_df$prob,
-    levels = rev(seq(0.1, 0.9, by = 0.1))
+  results_df$prob_factor <- factor(
+    results_df$prob,
+    levels = seq(0.1, 0.9, by = 0.1),
+    ordered = TRUE
   )
 
   # Create plot for each version and alpha combination
@@ -140,7 +145,7 @@ plot_densities <- function(results_df) {
       p <- ggplot(plot_data, aes(x = value, y = prob_factor, fill = prob_factor)) +
         ggridges::geom_density_ridges(alpha = 0.8, scale = 2) +
         facet_wrap(~metric, scales = "free_x", ncol = 3) +
-        scale_fill_viridis_d(name = "Censoring\nProbability") +
+        scale_fill_viridis_d(name = "Censoring\nProbability", direction = -1) +
         labs(
           title = paste0(
             "glmnet ", version, " - ",
