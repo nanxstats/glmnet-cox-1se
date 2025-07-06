@@ -1,10 +1,13 @@
-# Compare Cox regression lambda.1se rule behavior in glmnet 4.1-8 vs. 4.1-9
+# Compare lambda.1se rule behavior for Cox regressions in glmnet 4.1-8 vs. 4.1-9
 # Examine the effect of CV error normalization changes on model selection
 
 library(doFuture)
 library(ggplot2)
 
-# Simulate Cox regression ----
+# Srcery palette
+pal_srcery <- c("#EF2F27", "#519F50", "#FBB829", "#2C78BF", "#E02C6D", "#0AAEB3")
+
+# Simulate one dataset and run regularized Cox regression ----
 #' @param n Number of observations.
 #' @param p Number of variables.
 #' @param nzc Number of non-zero coefficients.
@@ -17,29 +20,21 @@ simulate_cox <- function(
     n = 1000, p = 100, nzc = 10,
     prob, alpha,
     use_1se = TRUE) {
-  # Generate data
+  # Example derived from ?glmnet::cv.glmnet
   x <- matrix(rnorm(n * p), n, p)
 
-  # True coefficients
   beta <- rnorm(nzc)
   fx <- x[, seq(nzc)] %*% beta / 3
   hx <- exp(fx)
   ty <- rexp(n, hx)
 
-  # Censoring (prob is the probability of being censored)
   tcens <- rbinom(n = n, prob = prob, size = 1)
   y <- cbind(time = ty, status = 1 - tcens)
 
-  # Run cross-validation
   fit_cv <- glmnet::cv.glmnet(x, y, family = "cox", nfolds = 5, alpha = alpha)
-
-  # Select lambda
   lambda_selected <- if (use_1se) fit_cv$lambda.1se else fit_cv$lambda.min
-
-  # Fit model on complete data with selected lambda
   fit <- glmnet::glmnet(x, y, family = "cox", alpha = alpha, lambda = lambda_selected)
 
-  # Calculate metrics
   selected_vars <- which(as.vector(fit$beta) != 0)
   true_vars <- seq(nzc)
 
@@ -55,7 +50,7 @@ simulate_cox <- function(
   metrics
 }
 
-# Install glmnet version ----
+# Install a specific glmnet version at runtime ----
 install_glmnet <- function(version) {
   glmnet_installed <- installed.packages()[, "Package"] == "glmnet"
   if (any(glmnet_installed)) remove.packages("glmnet")
@@ -72,6 +67,7 @@ simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
   install_glmnet(version)
   message(paste("Running experiments with glmnet version:", packageVersion("glmnet")))
 
+  # Parameter grid
   prob_values <- seq(0.1, 0.9, by = 0.1)
   alpha_values <- c(1, 0.5)
 
@@ -110,7 +106,7 @@ simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
   as.data.frame(results)
 }
 
-# Plot selection densities ----
+# Ridgeline plots showing selection metric densities ----
 plot_densities <- function(results_df) {
   # Convert to factor for proper ordering
   results_df$prob_factor <- factor(
@@ -143,7 +139,7 @@ plot_densities <- function(results_df) {
         ggridges::geom_density_ridges(alpha = 0.8, scale = 2) +
         facet_wrap(~metric, scales = "free_x", ncol = 3) +
         scale_fill_viridis_d(
-          name = "Censoring\nProbability",
+          name = "Censoring\nprobability",
           guide = guide_legend(reverse = TRUE)
         ) +
         labs(
@@ -175,8 +171,8 @@ plot_densities <- function(results_df) {
   plots_list
 }
 
-# Run on different glmnet versions and save results ----
-compare_glmnet_versions <- function() {
+# Run simulation on different glmnet versions and save results ----
+run_simulation <- function() {
   message("\n=== Running benchmarks with glmnet 4.1-8 ===")
   results_418 <- simulate_version("4.1-8", n_reps = 36)
 
@@ -200,12 +196,8 @@ compare_glmnet_versions <- function() {
   all_results
 }
 
-# Srcery palette ----
-pal_srcery <- c("#EF2F27", "#519F50", "#FBB829", "#2C78BF", "#E02C6D", "#0AAEB3")
-
-# Summarize sparsity ----
-summarize_sparsity <- function(results_df) {
-  # Calculate summary statistics
+# Line graph displaying null model rates ----
+plot_null_rates <- function(results_df) {
   summary_stats <- results_df |>
     dplyr::group_by(version, alpha, prob) |>
     dplyr::summarise(
@@ -216,7 +208,6 @@ summarize_sparsity <- function(results_df) {
       .groups = "drop"
     )
 
-  # Plot null model rates
   p_null <- ggplot(
     summary_stats,
     aes(
@@ -247,8 +238,8 @@ summarize_sparsity <- function(results_df) {
   list(summary_stats = summary_stats, plot = p_null)
 }
 
-# Compare versions ----
-compare_versions <- function(results_df) {
+# Line graph comparing number of variables selected between glmnet versions ----
+plot_nvar_diff <- function(results_df) {
   # Summary statistics by version and censoring probability
   summary_by_version <- results_df |>
     dplyr::group_by(version, alpha, prob) |>
@@ -305,7 +296,7 @@ compare_versions <- function(results_df) {
   )
 }
 
-# Plot heatmap ----
+# Heatmap for null model rates ----
 plot_heatmap <- function(summary_by_version) {
   heatmap_data <- summary_by_version |>
     dplyr::mutate(
@@ -350,15 +341,15 @@ plot_heatmap <- function(summary_by_version) {
   p_heatmap
 }
 
-# Analyze results ----
-analyze_results <- function(results_df) {
-  sparsity_analysis <- summarize_sparsity(results_df)
-  version_comparison <- compare_versions(results_df)
+# Plot simulation outputs ----
+plot_results <- function(results_df) {
+  sparsity_analysis <- plot_null_rates(results_df)
+  version_comparison <- plot_nvar_diff(results_df)
   heatmap_plot <- plot_heatmap(version_comparison$summary_by_version)
 
   invisible()
 }
 
-# Run the full analysis pipeline
-results <- compare_glmnet_versions()
-analysis_results <- analyze_results(results)
+# Run the full analysis ----
+results <- run_simulation()
+plots <- plot_results(results)
