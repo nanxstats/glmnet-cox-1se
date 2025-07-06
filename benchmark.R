@@ -63,39 +63,29 @@ install_glmnet <- function(version) {
   remotes::install_version("glmnet", version = version, quiet = TRUE, upgrade = "never", force = TRUE)
 }
 
-# Simulate for a specific glmnet version ----
+# Run simulation on a specific glmnet version in parallel ----
 #' @param version glmnet version to use.
 #' @param n_reps Number of repetitions.
 #'
 #' @return Results data frame.
 simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
-  # Set up parameters
-  prob_values <- seq(0.1, 0.9, by = 0.1)
-  alpha_values <- c(1, 0.5) # lasso and elastic-net
-
-  # Install the specific versions
   install_glmnet(version)
-
-  # Verify version
   message(paste("Running experiments with glmnet version:", packageVersion("glmnet")))
 
-  # Set up parallel backend
+  prob_values <- seq(0.1, 0.9, by = 0.1)
+  alpha_values <- c(1, 0.5)
+
   plan(multisession, workers = parallelly::availableCores() - 1)
 
-  # Set seed for reproducibility
   set.seed(42)
-
-  # Run experiments using lambda.1se
   results_list <- foreach(
     rep = 1:n_reps,
     .options.future = list(seed = TRUE)
   ) %dofuture% {
     results_single <- data.frame()
-
     for (prob in prob_values) {
       for (alpha in alpha_values) {
         metrics <- simulate_cox(prob = prob, alpha = alpha, use_1se = TRUE)
-
         results_single <- rbind(
           results_single,
           data.frame(
@@ -110,14 +100,11 @@ simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
         )
       }
     }
-
     results_single
   }
 
-  # Reset to sequential processing
   plan(sequential)
 
-  # Combine results
   results <- dplyr::bind_rows(results_list)
 
   as.data.frame(results)
@@ -125,7 +112,7 @@ simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
 
 # Plot selection densities ----
 plot_densities <- function(results_df) {
-  # Convert prob to factor for proper ordering
+  # Convert to factor for proper ordering
   results_df$prob_factor <- factor(
     results_df$prob,
     levels = seq(0.1, 0.9, by = 0.1),
@@ -152,7 +139,6 @@ plot_densities <- function(results_df) {
           )
         )
 
-      # Create ridgeline plot
       p <- ggplot(plot_data, aes(x = value, y = prob_factor, fill = prob_factor)) +
         ggridges::geom_density_ridges(alpha = 0.8, scale = 2) +
         facet_wrap(~metric, scales = "free_x", ncol = 3) +
@@ -178,7 +164,6 @@ plot_densities <- function(results_df) {
           legend.position = "right"
         )
 
-      # Store plot
       plot_name <- paste0(
         "v", gsub("\\.|-", "_", version), "_alpha",
         gsub("\\.", "_", as.character(alpha))
@@ -190,24 +175,18 @@ plot_densities <- function(results_df) {
   plots_list
 }
 
-# Compare glmnet versions ----
+# Run on different glmnet versions and save results ----
 compare_glmnet_versions <- function() {
   message("\n=== Running benchmarks with glmnet 4.1-8 ===")
-  results_418 <- simulate_version("4.1-8", n_reps = 500)
+  results_418 <- simulate_version("4.1-8", n_reps = 36)
 
   message("\n=== Running benchmarks with glmnet 4.1-9 ===")
-  results_419 <- simulate_version("4.1-9", n_reps = 500)
+  results_419 <- simulate_version("4.1-9", n_reps = 36)
 
-  # Combine results
   all_results <- rbind(results_418, results_419)
-
-  # Save results
   saveRDS(all_results, "glmnet_comparison_results.rds")
 
-  # Create plots
   plots <- plot_densities(all_results)
-
-  # Save plots
   for (plot_name in names(plots)) {
     ggsave(
       filename = paste0("plot_", plot_name, ".png"),
@@ -220,6 +199,9 @@ compare_glmnet_versions <- function() {
 
   all_results
 }
+
+# Srcery palette ----
+pal_srcery <- c("#EF2F27", "#519F50", "#FBB829", "#2C78BF", "#E02C6D", "#0AAEB3")
 
 # Summarize sparsity ----
 summarize_sparsity <- function(results_df) {
@@ -244,14 +226,14 @@ summarize_sparsity <- function(results_df) {
   ) +
     geom_line(linewidth = 1.2) +
     geom_point(size = 2) +
-    scale_color_manual(values = c("4.1-8" = "#E69F00", "4.1-9" = "#56B4E9")) +
+    scale_color_manual(values = c("4.1-8" = pal_srcery[2], "4.1-9" = pal_srcery[3])) +
     scale_linetype_manual(
       values = c("1" = "solid", "0.5" = "dashed"),
       labels = c("1" = "Lasso", "0.5" = "Elastic-net")
     ) +
     labs(
       title = "Null model rate comparison",
-      subtitle = "Proportion of simulations resulting in no variable selection",
+      subtitle = "Proportion of simulations with no variable selected",
       x = "Censoring probability",
       y = "Null model rate",
       color = "glmnet version",
@@ -301,7 +283,7 @@ compare_versions <- function(results_df) {
     geom_point(size = 3) +
     geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
     scale_color_manual(
-      values = c("1" = "#E69F00", "0.5" = "#56B4E9"),
+      values = c("1" = pal_srcery[1], "0.5" = pal_srcery[4]),
       labels = c("1" = "Lasso", "0.5" = "Elastic-net")
     ) +
     labs(
@@ -344,7 +326,7 @@ plot_heatmap <- function(summary_by_version) {
       color = "white", size = 3
     ) +
     scale_fill_gradient2(
-      low = "darkgreen", mid = "yellow", high = "darkred",
+      low = pal_srcery[2], mid = pal_srcery[3], high = pal_srcery[1],
       midpoint = 0.5, limits = c(0, 1),
       labels = scales::percent,
       name = "Null Model\nRate"
