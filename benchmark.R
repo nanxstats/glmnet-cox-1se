@@ -232,7 +232,8 @@ plot_null_rates <- function(results_df) {
     ) +
     cowplot::theme_cowplot() +
     theme(
-      legend.position = c(0.05, 0.70),
+      legend.position = "inside",
+      legend.position.inside = c(0.05, 0.70),
       legend.direction = "vertical",
       legend.key.width = unit(3, "cm")
     )
@@ -290,7 +291,8 @@ plot_nvar_diff <- function(results_df) {
     ) +
     cowplot::theme_cowplot() +
     theme(
-      legend.position = c(0.05, 0.85),
+      legend.position = "inside",
+      legend.position.inside = c(0.05, 0.85),
       legend.direction = "horizontal"
     )
 
