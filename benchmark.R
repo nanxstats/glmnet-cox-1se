@@ -174,10 +174,10 @@ plot_densities <- function(results_df) {
 # Run simulation on different glmnet versions and save results ----
 run_simulation <- function() {
   message("\n=== Running benchmarks with glmnet 4.1-8 ===")
-  results_418 <- simulate_version("4.1-8", n_reps = 36)
+  results_418 <- simulate_version("4.1-8", n_reps = 500)
 
   message("\n=== Running benchmarks with glmnet 4.1-9 ===")
-  results_419 <- simulate_version("4.1-9", n_reps = 36)
+  results_419 <- simulate_version("4.1-9", n_reps = 500)
 
   all_results <- rbind(results_418, results_419)
   saveRDS(all_results, "glmnet_comparison_results.rds")
