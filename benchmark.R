@@ -231,7 +231,11 @@ plot_null_rates <- function(results_df) {
       linetype = "Model type"
     ) +
     cowplot::theme_cowplot() +
-    theme(legend.position = "bottom")
+    theme(
+      legend.position = c(0.05, 0.70),
+      legend.direction = "vertical",
+      legend.key.width = unit(3, "cm")
+    )
 
   ggsave("null_model_rate_comparison.svg", p_null, width = 7, height = 7 / 1.618)
 
@@ -285,7 +289,10 @@ plot_nvar_diff <- function(results_df) {
       color = "Model type"
     ) +
     cowplot::theme_cowplot() +
-    theme(legend.position = "bottom")
+    theme(
+      legend.position = c(0.05, 0.85),
+      legend.direction = "horizontal"
+    )
 
   ggsave("difference_mean_selected.svg", p_diff_selected, width = 7, height = 7 / 1.618)
 
