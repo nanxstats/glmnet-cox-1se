@@ -4,8 +4,8 @@
 library(doFuture)
 library(ggplot2)
 
-# Srcery palette
-pal_srcery <- c("#EF2F27", "#519F50", "#FBB829", "#2C78BF", "#E02C6D", "#0AAEB3")
+# Use color palette
+pal_obs <- ggsci::pal_observable()(6)
 
 # Simulate one dataset and run regularized Cox regression ----
 #' @param n Number of observations.
@@ -115,57 +115,126 @@ plot_densities <- function(results_df) {
     ordered = TRUE
   )
 
-  # Create plot for each version and alpha combination
+  # Create plot for each alpha (model type) with both versions
   plots_list <- list()
 
-  for (version in unique(results_df$version)) {
-    for (alpha in unique(results_df$alpha)) {
-      plot_data <- results_df |>
-        dplyr::filter(version == !!version, alpha == !!alpha) |>
-        tidyr::pivot_longer(
-          cols = c(total_selected, true_positives, false_positives),
-          names_to = "metric",
-          values_to = "value"
-        ) |>
-        dplyr::mutate(
-          metric = factor(
-            metric,
-            levels = c("total_selected", "true_positives", "false_positives"),
-            labels = c("Total Selected", "True Positives", "False Positives")
-          )
-        )
-
-      p <- ggplot(plot_data, aes(x = value, y = prob_factor, fill = prob_factor)) +
-        ggridges::geom_density_ridges(alpha = 0.8, scale = 2) +
-        facet_wrap(~metric, scales = "free_x", ncol = 3) +
-        scale_fill_viridis_d(
-          name = "Censoring\nprobability",
-          guide = guide_legend(reverse = TRUE)
-        ) +
-        labs(
-          title = paste0(
-            "glmnet ", version, " - ",
-            ifelse(alpha == 1, "Lasso", "Elastic-net"),
-            " (α = ", alpha, ")"
-          ),
-          subtitle = "Distribution of selected variables using lambda.1se",
-          x = "Number of variables",
-          y = "Censoring probability"
-        ) +
-        theme_minimal() +
-        theme(
-          plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
-          plot.subtitle = element_text(hjust = 0.5, size = 12),
-          strip.text = element_text(size = 11, face = "bold"),
-          legend.position = "right"
-        )
-
-      plot_name <- paste0(
-        "v", gsub("\\.|-", "_", version), "_alpha",
-        gsub("\\.", "_", as.character(alpha))
+  for (alpha in unique(results_df$alpha)) {
+    # Prepare data with version info for faceting
+    plot_data <- results_df |>
+      dplyr::filter(alpha == !!alpha) |>
+      tidyr::pivot_longer(
+        cols = c(total_selected, true_positives, false_positives),
+        names_to = "metric",
+        values_to = "value"
+      ) |>
+      dplyr::mutate(
+        metric = factor(
+          metric,
+          levels = c("total_selected", "true_positives", "false_positives"),
+          labels = c("Total Selected", "True Positives", "False Positives")
+        ),
+        version_label = paste0("glmnet ", version)
       )
-      plots_list[[plot_name]] <- p
+
+    # Define x-axis limits for each metric and model type
+    x_limits <- list()
+    if (alpha == 0.5) {
+      x_limits[["Total Selected"]] <- c(-1, 40)
+      x_limits[["True Positives"]] <- c(-1, 13)
+      x_limits[["False Positives"]] <- c(-1, 20)
     }
+    if (alpha == 1) {
+      x_limits[["Total Selected"]] <- c(-1, 30)
+      x_limits[["True Positives"]] <- c(-1, 13)
+      x_limits[["False Positives"]] <- c(-1, 10)
+    }
+    
+    # Create individual panels for cowplot alignment
+    panel_list <- list()
+
+    for (ver in unique(plot_data$version)) {
+      for (met in levels(plot_data$metric)) {
+        panel_data <- plot_data |>
+          dplyr::filter(version == ver, metric == met)
+
+        p_panel <- ggplot(panel_data, aes(x = value, y = prob_factor, fill = prob_factor)) +
+          ggridges::geom_density_ridges(alpha = 0.8, scale = 2) +
+          scale_x_continuous(limits = x_limits[[met]]) +
+          scale_fill_viridis_d(
+            name = "Censoring\nprobability",
+            guide = guide_legend(reverse = TRUE),
+            option = "plasma",
+            direction = -1
+          ) +
+          labs(
+            title = paste0(panel_data$version_label[1], " - ", met),
+            x = "Number of variables",
+            y = if (met == "Total Selected") "Censoring probability" else ""
+          ) +
+          theme_minimal() +
+          theme(
+            plot.title = element_text(hjust = 0.5, size = 11),
+            axis.title.y = element_text(size = 10),
+            axis.title.x = element_text(size = 10),
+            legend.position = "none"
+          )
+
+        panel_name <- paste0(ver, "_", gsub(" ", "_", met))
+        panel_list[[panel_name]] <- p_panel
+      }
+    }
+
+    # Extract legend from one plot
+    legend_plot <- ggplot(plot_data, aes(x = value, y = prob_factor, fill = prob_factor)) +
+      ggridges::geom_density_ridges(alpha = 0.8, scale = 2) +
+      scale_fill_viridis_d(
+        name = "Censoring\nprobability",
+        guide = guide_legend(reverse = TRUE),
+        option = "plasma",
+        direction = -1
+      ) +
+      theme_minimal()
+    legend <- cowplot::get_legend(legend_plot)
+
+    # Arrange panels with aligned axes using cowplot
+    aligned_panels <- cowplot::align_plots(
+      panel_list[["4.1-8_Total_Selected"]], panel_list[["4.1-8_True_Positives"]], panel_list[["4.1-8_False_Positives"]],
+      panel_list[["4.1-9_Total_Selected"]], panel_list[["4.1-9_True_Positives"]], panel_list[["4.1-9_False_Positives"]],
+      align = "hv", axis = "tblr"
+    )
+
+    # Create the combined plot
+    combined_plot <- cowplot::plot_grid(
+      aligned_panels[[1]], aligned_panels[[2]], aligned_panels[[3]],
+      aligned_panels[[4]], aligned_panels[[5]], aligned_panels[[6]],
+      ncol = 3, nrow = 2,
+      rel_widths = c(1, 1, 1),
+      rel_heights = c(1, 1)
+    )
+
+    # Add overall title and legend
+    title <- cowplot::ggdraw() +
+      cowplot::draw_label(
+        paste0(
+          ifelse(alpha == 1, "Lasso", "Elastic-net"),
+          " (α = ", alpha, ") - Distribution of selected variables using lambda.1se"
+        ),
+        fontface = "bold",
+        size = 14,
+        x = 0.5,
+        hjust = 0.5
+      )
+
+    # Combine title, plot, and legend
+    final_plot <- cowplot::plot_grid(
+      title,
+      cowplot::plot_grid(combined_plot, legend, ncol = 2, rel_widths = c(6, 1)),
+      ncol = 1,
+      rel_heights = c(0.1, 1)
+    )
+
+    plot_name <- paste0("alpha", gsub("\\.", "-", as.character(alpha)))
+    plots_list[[plot_name]] <- final_plot
   }
 
   plots_list
@@ -185,10 +254,10 @@ run_simulation <- function() {
   plots <- plot_densities(all_results)
   for (plot_name in names(plots)) {
     ggsave(
-      filename = paste0("plot_", plot_name, ".png"),
+      filename = paste0("plot-", plot_name, ".png"),
       plot = plots[[plot_name]],
-      width = 7,
-      height = 7 / 1.618,
+      width = 12,
+      height = 8,
       dpi = 300
     )
   }
@@ -215,9 +284,9 @@ plot_null_rates <- function(results_df) {
       color = version, linetype = factor(alpha)
     )
   ) +
-    geom_line(linewidth = 1.2) +
+    geom_line(linewidth = 0.5) +
     geom_point(size = 2) +
-    scale_color_manual(values = c("4.1-8" = pal_srcery[2], "4.1-9" = pal_srcery[3])) +
+    scale_color_manual(values = c("4.1-8" = pal_obs[1], "4.1-9" = pal_obs[4])) +
     scale_linetype_manual(
       values = c("1" = "solid", "0.5" = "dashed"),
       labels = c("1" = "Lasso", "0.5" = "Elastic-net")
@@ -235,10 +304,10 @@ plot_null_rates <- function(results_df) {
       legend.position = "inside",
       legend.position.inside = c(0.05, 0.70),
       legend.direction = "vertical",
-      legend.key.width = unit(3, "cm")
+      legend.key.width = unit(1.3, "cm")
     )
 
-  ggsave("null_model_rate_comparison.svg", p_null, width = 7, height = 7 / 1.618)
+  ggsave("null-model-rate-comparison.svg", p_null, width = 7, height = 7 / 1.618)
 
   list(summary_stats = summary_stats, plot = p_null)
 }
@@ -270,16 +339,13 @@ plot_nvar_diff <- function(results_df) {
   # Plot difference in mean number of selected variables
   p_diff_selected <- ggplot(
     difference_summary,
-    aes(
-      x = prob, y = diff_mean_selected,
-      color = factor(alpha), group = factor(alpha)
-    )
+    aes(x = prob, y = diff_mean_selected, color = factor(alpha), group = factor(alpha))
   ) +
-    geom_line(linewidth = 1.2) +
-    geom_point(size = 3) +
+    geom_line(linewidth = 0.5) +
+    geom_point(size = 2) +
     geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
     scale_color_manual(
-      values = c("1" = pal_srcery[1], "0.5" = pal_srcery[4]),
+      values = c("1" = pal_obs[3], "0.5" = pal_obs[5]),
       labels = c("1" = "Lasso", "0.5" = "Elastic-net")
     ) +
     labs(
@@ -293,10 +359,11 @@ plot_nvar_diff <- function(results_df) {
     theme(
       legend.position = "inside",
       legend.position.inside = c(0.05, 0.85),
-      legend.direction = "horizontal"
+      legend.direction = "horizontal",
+      legend.key.width = unit(1.3, "cm")
     )
 
-  ggsave("difference_mean_selected.svg", p_diff_selected, width = 7, height = 7 / 1.618)
+  ggsave("difference-mean-selected.svg", p_diff_selected, width = 7, height = 7 / 1.618)
 
   list(
     summary_by_version = summary_by_version,
@@ -326,7 +393,7 @@ plot_heatmap <- function(summary_by_version) {
       color = "white", size = 3
     ) +
     scale_fill_gradient2(
-      low = pal_srcery[2], mid = pal_srcery[3], high = pal_srcery[1],
+      low = pal_obs[5], mid = pal_obs[2], high = pal_obs[3],
       midpoint = 0.5, limits = c(0, 1),
       labels = scales::percent,
       name = "Null Model\nRate"
@@ -345,7 +412,7 @@ plot_heatmap <- function(summary_by_version) {
       legend.position = "right"
     )
 
-  ggsave("null_model_heatmap.svg", p_heatmap, width = 7, height = 7 / 1.618)
+  ggsave("null-model-heatmap.svg", p_heatmap, width = 7, height = 7 / 1.618)
 
   p_heatmap
 }
