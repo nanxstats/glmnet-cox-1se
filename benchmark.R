@@ -1,9 +1,6 @@
 # Compare lambda.1se rule behavior for Cox regressions in glmnet 4.1-8 vs. 4.1-9
 # Examine the effect of CV error normalization changes on model selection
 
-library(doFuture)
-library(ggplot2)
-
 # Use color palette
 pal_obs <- ggsci::pal_observable()(6)
 
@@ -71,10 +68,12 @@ simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
   prob_values <- seq(0.1, 0.9, by = 0.1)
   alpha_values <- c(1, 0.5)
 
-  plan(multisession, workers = parallelly::availableCores() - 1)
+  `%dofuture%` <- doFuture::`%dofuture%`
+
+  future::plan(future::multisession, workers = parallelly::availableCores() - 1)
 
   set.seed(42)
-  results_list <- foreach(
+  results_list <- foreach::foreach(
     rep = 1:n_reps,
     .options.future = list(seed = TRUE)
   ) %dofuture% {
@@ -99,7 +98,7 @@ simulate_version <- function(version = c("4.1-8", "4.1-9"), n_reps) {
     results_single
   }
 
-  plan(sequential)
+  future::plan(future::sequential)
 
   results <- dplyr::bind_rows(results_list)
 
@@ -148,7 +147,7 @@ plot_densities <- function(results_df) {
       x_limits[["True Positives"]] <- c(-1, 13)
       x_limits[["False Positives"]] <- c(-1, 10)
     }
-    
+
     # Create individual panels for cowplot alignment
     panel_list <- list()
 
@@ -157,25 +156,25 @@ plot_densities <- function(results_df) {
         panel_data <- plot_data |>
           dplyr::filter(version == ver, metric == met)
 
-        p_panel <- ggplot(panel_data, aes(x = value, y = prob_factor, fill = prob_factor)) +
+        p_panel <- ggplot2::ggplot(panel_data, ggplot2::aes(x = value, y = prob_factor, fill = prob_factor)) +
           ggridges::geom_density_ridges(alpha = 0.8, scale = 2) +
-          scale_x_continuous(limits = x_limits[[met]]) +
-          scale_fill_viridis_d(
+          ggplot2::scale_x_continuous(limits = x_limits[[met]]) +
+          ggplot2::scale_fill_viridis_d(
             name = "Censoring\nprobability",
-            guide = guide_legend(reverse = TRUE),
+            guide = ggplot2::guide_legend(reverse = TRUE),
             option = "plasma",
             direction = -1
           ) +
-          labs(
+          ggplot2::labs(
             title = paste0(panel_data$version_label[1], " - ", met),
             x = "Number of variables",
             y = if (met == "Total Selected") "Censoring probability" else ""
           ) +
-          theme_minimal() +
-          theme(
-            plot.title = element_text(hjust = 0.5, size = 11),
-            axis.title.y = element_text(size = 10),
-            axis.title.x = element_text(size = 10),
+          ggplot2::theme_minimal() +
+          ggplot2::theme(
+            plot.title = ggplot2::element_text(hjust = 0.5, size = 11),
+            axis.title.y = ggplot2::element_text(size = 10),
+            axis.title.x = ggplot2::element_text(size = 10),
             legend.position = "none"
           )
 
@@ -185,15 +184,15 @@ plot_densities <- function(results_df) {
     }
 
     # Extract legend from one plot
-    legend_plot <- ggplot(plot_data, aes(x = value, y = prob_factor, fill = prob_factor)) +
+    legend_plot <- ggplot2::ggplot(plot_data, ggplot2::aes(x = value, y = prob_factor, fill = prob_factor)) +
       ggridges::geom_density_ridges(alpha = 0.8, scale = 2) +
-      scale_fill_viridis_d(
+      ggplot2::scale_fill_viridis_d(
         name = "Censoring\nprobability",
-        guide = guide_legend(reverse = TRUE),
+        guide = ggplot2::guide_legend(reverse = TRUE),
         option = "plasma",
         direction = -1
       ) +
-      theme_minimal()
+      ggplot2::theme_minimal()
     legend <- cowplot::get_legend(legend_plot)
 
     # Arrange panels with aligned axes using cowplot
@@ -253,7 +252,7 @@ run_simulation <- function() {
 
   plots <- plot_densities(all_results)
   for (plot_name in names(plots)) {
-    ggsave(
+    ggplot2::ggsave(
       filename = paste0("plot-", plot_name, ".png"),
       plot = plots[[plot_name]],
       width = 12,
@@ -277,21 +276,21 @@ plot_null_rates <- function(results_df) {
       .groups = "drop"
     )
 
-  p_null <- ggplot(
+  p_null <- ggplot2::ggplot(
     summary_stats,
-    aes(
+    ggplot2::aes(
       x = prob, y = null_model_rate,
       color = version, linetype = factor(alpha)
     )
   ) +
-    geom_line(linewidth = 0.5) +
-    geom_point(size = 2) +
-    scale_color_manual(values = c("4.1-8" = pal_obs[1], "4.1-9" = pal_obs[4])) +
-    scale_linetype_manual(
+    ggplot2::geom_line(linewidth = 0.5) +
+    ggplot2::geom_point(size = 2) +
+    ggplot2::scale_color_manual(values = c("4.1-8" = pal_obs[1], "4.1-9" = pal_obs[4])) +
+    ggplot2::scale_linetype_manual(
       values = c("1" = "solid", "0.5" = "dashed"),
       labels = c("1" = "Lasso", "0.5" = "Elastic-net")
     ) +
-    labs(
+    ggplot2::labs(
       title = "Null model rate comparison",
       subtitle = "Proportion of simulations with no variable selected",
       x = "Censoring probability",
@@ -300,14 +299,14 @@ plot_null_rates <- function(results_df) {
       linetype = "Model type"
     ) +
     cowplot::theme_cowplot() +
-    theme(
+    ggplot2::theme(
       legend.position = "inside",
       legend.position.inside = c(0.05, 0.70),
       legend.direction = "vertical",
-      legend.key.width = unit(1.3, "cm")
+      legend.key.width = grid::unit(1.3, "cm")
     )
 
-  ggsave("null-model-rate-comparison.svg", p_null, width = 7, height = 7 / 1.618)
+  ggplot2::ggsave("null-model-rate-comparison.svg", p_null, width = 7, height = 7 / 1.618)
 
   list(summary_stats = summary_stats, plot = p_null)
 }
@@ -337,18 +336,18 @@ plot_nvar_diff <- function(results_df) {
     )
 
   # Plot difference in mean number of selected variables
-  p_diff_selected <- ggplot(
+  p_diff_selected <- ggplot2::ggplot(
     difference_summary,
-    aes(x = prob, y = diff_mean_selected, color = factor(alpha), group = factor(alpha))
+    ggplot2::aes(x = prob, y = diff_mean_selected, color = factor(alpha), group = factor(alpha))
   ) +
-    geom_line(linewidth = 0.5) +
-    geom_point(size = 2) +
-    geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
-    scale_color_manual(
+    ggplot2::geom_line(linewidth = 0.5) +
+    ggplot2::geom_point(size = 2) +
+    ggplot2::geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
+    ggplot2::scale_color_manual(
       values = c("1" = pal_obs[3], "0.5" = pal_obs[5]),
       labels = c("1" = "Lasso", "0.5" = "Elastic-net")
     ) +
-    labs(
+    ggplot2::labs(
       title = "Change in # variables selected: glmnet 4.1-9 vs. 4.1-8",
       subtitle = "Negative values indicate fewer variables selected in glmnet 4.1-9",
       x = "Censoring probability",
@@ -356,14 +355,14 @@ plot_nvar_diff <- function(results_df) {
       color = "Model type"
     ) +
     cowplot::theme_cowplot() +
-    theme(
+    ggplot2::theme(
       legend.position = "inside",
       legend.position.inside = c(0.05, 0.85),
       legend.direction = "horizontal",
-      legend.key.width = unit(1.3, "cm")
+      legend.key.width = grid::unit(1.3, "cm")
     )
 
-  ggsave("difference-mean-selected.svg", p_diff_selected, width = 7, height = 7 / 1.618)
+  ggplot2::ggsave("difference-mean-selected.svg", p_diff_selected, width = 7, height = 7 / 1.618)
 
   list(
     summary_by_version = summary_by_version,
@@ -380,39 +379,39 @@ plot_heatmap <- function(summary_by_version) {
       version_label = paste("glmnet", version)
     )
 
-  p_heatmap <- ggplot(
+  p_heatmap <- ggplot2::ggplot(
     heatmap_data,
-    aes(
+    ggplot2::aes(
       x = factor(prob), y = interaction(model_type, version_label),
       fill = null_model_rate
     )
   ) +
-    geom_tile() +
-    geom_text(
-      aes(label = sprintf("%.1f%%", null_model_rate * 100)),
+    ggplot2::geom_tile() +
+    ggplot2::geom_text(
+      ggplot2::aes(label = sprintf("%.1f%%", null_model_rate * 100)),
       color = "white", size = 3
     ) +
-    scale_fill_gradient2(
+    ggplot2::scale_fill_gradient2(
       low = pal_obs[5], mid = pal_obs[2], high = pal_obs[3],
       midpoint = 0.5, limits = c(0, 1),
       labels = scales::percent,
       name = "Null Model\nRate"
     ) +
-    labs(
+    ggplot2::labs(
       title = "Null model rates across conditions",
       subtitle = "Proportion of simulations with no variable selection (lambda.1se)",
       x = "Censoring probability",
       y = ""
     ) +
-    theme_minimal() +
-    theme(
-      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
-      plot.subtitle = element_text(hjust = 0.5, size = 12),
-      axis.text.y = element_text(size = 10),
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      plot.title = ggplot2::element_text(hjust = 0.5, size = 14, face = "bold"),
+      plot.subtitle = ggplot2::element_text(hjust = 0.5, size = 12),
+      axis.text.y = ggplot2::element_text(size = 10),
       legend.position = "right"
     )
 
-  ggsave("null-model-heatmap.svg", p_heatmap, width = 7, height = 7 / 1.618)
+  ggplot2::ggsave("null-model-heatmap.svg", p_heatmap, width = 7, height = 7 / 1.618)
 
   p_heatmap
 }
